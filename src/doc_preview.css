@@ -1,0 +1,57 @@
+.doc-preview-container {
+    background-color: #1f2937; /* bg-gray-800 */
+    padding: 2rem;
+    display: flex;
+    justify-content: center;
+    overflow-y: auto;
+}
+
+.doc-preview-page {
+    background-color: #374151; /* bg-gray-700 */
+    color: #d1d5db; /* text-gray-300 */
+    padding: 1in; /* Standard margin */
+    width: 100%;
+    min-height: 11in; /* Standard height */
+    box-shadow: 0 0 15px rgba(0,0,0,0.5);
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 12pt;
+    line-height: 1.5;
+}
+
+.doc-preview-page h1,
+.doc-preview-page h2,
+.doc-preview-page h3,
+.doc-preview-page h4,
+.doc-preview-page h5,
+.doc-preview-page h6 {
+    font-family: 'Calibri', 'Arial', sans-serif;
+    color: #818cf8; /* text-indigo-400 */
+}
+
+.doc-preview-page p {
+    margin-bottom: 12pt;
+}
+
+.doc-preview-page ul {
+    list-style-type: disc;
+    padding-left: 40px;
+    margin-bottom: 12pt;
+}
+
+.doc-preview-page ol {
+    list-style-type: decimal;
+    padding-left: 40px;
+    margin-bottom: 12pt;
+}
+
+.doc-preview-page li {
+    margin-bottom: 6pt;
+}
+
+.doc-preview-page strong, .doc-preview-page b {
+    font-weight: bold;
+}
+
+.doc-preview-page em, .doc-preview-page i {
+    font-style: italic;
+}
