@@ -60,6 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const systemInstructionText = document.getElementById('systemInstructionText');
     const saveSystemInstruction = document.getElementById('saveSystemInstruction');
     const closeModal = document.getElementById('closeModal');
+    const rulesetSelect = document.getElementById('rulesetSelect');
     const saveBtn = document.getElementById('saveBtn');
     const loadBtn = document.getElementById('loadBtn');
     const deleteBtn = document.getElementById('deleteBtn');
@@ -148,6 +149,12 @@ document.addEventListener('DOMContentLoaded', () => {
    });
     // Load system instruction from local storage
     const savedInstruction = localStorage.getItem('systemInstruction');
+    const savedRuleset = localStorage.getItem('selectedRuleset');
+
+    if (savedRuleset) {
+       rulesetSelect.value = savedRuleset;
+    }
+
     if (savedInstruction) {
         systemInstruction = savedInstruction;
         systemInstructionText.value = savedInstruction;
@@ -156,9 +163,31 @@ document.addEventListener('DOMContentLoaded', () => {
     settingsBtn.addEventListener('click', () => settingsDropdown.classList.toggle('hidden'));
     systemInstructionBtn.addEventListener('click', () => systemInstructionModal.classList.remove('hidden'));
     closeModal.addEventListener('click', () => systemInstructionModal.classList.add('hidden'));
+    rulesetSelect.addEventListener('change', async () => {
+       const selectedUrl = rulesetSelect.value;
+       if (selectedUrl) {
+           try {
+               const response = await fetch(selectedUrl);
+               if (!response.ok) {
+                   throw new Error(`HTTP error! status: ${response.status}`);
+               }
+               const text = await response.text();
+               systemInstructionText.value = text;
+           } catch (error) {
+               console.error('Error fetching ruleset:', error);
+               systemInstructionText.value = `Failed to load ruleset. Please check the URL or your network connection.`;
+           }
+       } else {
+           // "Custom" is selected, so clear the textarea
+           systemInstructionText.value = '';
+       }
+    });
+
     saveSystemInstruction.addEventListener('click', () => {
         systemInstruction = systemInstructionText.value;
         localStorage.setItem('systemInstruction', systemInstruction);
+        // Also save the selected URL to re-select it when the modal is opened next time
+        localStorage.setItem('selectedRuleset', rulesetSelect.value);
         systemInstructionModal.classList.add('hidden');
         console.log('System instruction saved.');
     });
