@@ -47,9 +47,12 @@ document.addEventListener('DOMContentLoaded', () => {
     window.aiResponseDiv = aiResponseDiv;
     console.log('Got aiResponseDiv element:', aiResponseDiv);
     const webBrowsingCheckbox = document.getElementById('webBrowsing');
-    console.log('Got webBrowsingCheckbox element:', webBrowsingCheckbox);
+    const webBrowsingToggle = document.getElementById('webBrowsingToggle');
+    const webBrowsingIcon = document.getElementById('webBrowsingIcon');
+    const webBrowsingTooltip = document.getElementById('webBrowsingTooltip');
     const pdfFileInput = document.getElementById('pdfFile');
     console.log('Got pdfFileInput element:', pdfFileInput);
+   const fileAttachmentContainer = document.getElementById('file-attachment-container');
     const chatHistory = document.getElementById('chatHistory');
     const chatPlaceholder = document.getElementById('chatPlaceholder');
     const clearButton = document.getElementById('clearBtn');
@@ -691,6 +694,26 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+   webBrowsingToggle.addEventListener('mouseenter', () => {
+       webBrowsingTooltip.classList.remove('opacity-0');
+   });
+
+   webBrowsingToggle.addEventListener('mouseleave', () => {
+       webBrowsingTooltip.classList.add('opacity-0');
+   });
+
+   webBrowsingToggle.addEventListener('click', () => {
+       const enabled = webBrowsingCheckbox.checked;
+       webBrowsingCheckbox.checked = !enabled;
+       if (!enabled) {
+           webBrowsingIcon.classList.add('text-indigo-400');
+           webBrowsingTooltip.textContent = 'Web Browsing Enabled';
+       } else {
+           webBrowsingIcon.classList.remove('text-indigo-400');
+           webBrowsingTooltip.textContent = 'Enable Web Browsing';
+       }
+   });
+
     let thinkingInterval;
     window.startAIProcessing = (steps) => {
         aiThinkingProcess.innerHTML = '';
@@ -1291,6 +1314,34 @@ document.addEventListener('DOMContentLoaded', () => {
        renderTables();
        honoetionTab.click(); // Switch to the Honoetion tab
    }
+   pdfFileInput.addEventListener('change', () => {
+       if (pdfFileInput.files.length > 0) {
+           const file = pdfFileInput.files[0];
+           const fileType = file.type.split('/')[1].toUpperCase();
+           
+           fileAttachmentContainer.innerHTML = `
+               <div class="bg-gray-700 rounded-lg p-2 flex items-center justify-between">
+                   <div class="flex items-center">
+                       <svg class="w-6 h-6 text-pink-500 mr-2" fill="currentColor" viewBox="0 0 20 20"><path d="M4 3a2 2 0 100 4h12a2 2 0 100-4H4z"></path><path fill-rule="evenodd" d="M3 8h14v7a2 2 0 01-2 2H5a2 2 0 01-2-2V8zm5 4a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" clip-rule="evenodd"></path></svg>
+                       <div>
+                           <p class="text-sm font-medium text-white truncate" style="max-width: 200px;">${file.name}</p>
+                           <p class="text-xs text-gray-400">${fileType}</p>
+                       </div>
+                   </div>
+                   <button id="clearFileBtn" class="ml-2 text-gray-500 hover:text-white">
+                       <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path></svg>
+                   </button>
+               </div>
+           `;
+           fileAttachmentContainer.classList.remove('hidden');
+
+           document.getElementById('clearFileBtn').addEventListener('click', () => {
+               pdfFileInput.value = '';
+               fileAttachmentContainer.innerHTML = '';
+               fileAttachmentContainer.classList.add('hidden');
+           });
+       }
+   });
 });
 
     // New helper function to apply diffs
