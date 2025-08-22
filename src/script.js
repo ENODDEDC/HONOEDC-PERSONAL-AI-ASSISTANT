@@ -1049,6 +1049,12 @@ document.addEventListener('DOMContentLoaded', () => {
                                    }
                                    const html = converter.makeHtml(responseText);
                                    aiResponseDiv.innerHTML = html;
+                                   // Apply syntax highlighting after content is rendered
+                                   if (window.hljs) {
+                                       aiResponseDiv.querySelectorAll('pre code').forEach((block) => {
+                                           hljs.highlightElement(block);
+                                       });
+                                   }
                                    appendChatBubble(responseObject.statusMessage, 'ai', responseText);
                                    conversationHistory.push({ role: 'user', parts: userParts });
                                    // Save the cleaned, single JSON object to history
@@ -1058,6 +1064,12 @@ document.addEventListener('DOMContentLoaded', () => {
                                    console.error("Final attempt to parse JSON failed. Displaying raw text.");
                                    const html = converter.makeHtml(fullText);
                                    aiResponseDiv.innerHTML = html;
+                                   // Apply syntax highlighting after content is rendered
+                                   if (window.hljs) {
+                                       aiResponseDiv.querySelectorAll('pre code').forEach((block) => {
+                                           hljs.highlightElement(block);
+                                       });
+                                   }
                                    appendChatBubble("Here is the generated content (raw).", 'ai', fullText);
                                    conversationHistory.push({ role: 'user', parts: userParts });
                                    conversationHistory.push({ role: 'model', parts: [{ text: fullText }] });
