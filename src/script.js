@@ -968,57 +968,60 @@ document.addEventListener('DOMContentLoaded', () => {
                let lastCandidateWithMetadata = null;
 
                function processBuffer() {
-                   let startIndex = buffer.indexOf('[');
-                   if (startIndex === -1) return;
+                   while (true) {
+                       let startIndex = buffer.indexOf('[');
+                       if (startIndex === -1) return;
 
-                   let braceCount = 0;
-                   let inString = false;
-                   let endIndex = -1;
+                       let braceCount = 0;
+                       let inString = false;
+                       let endIndex = -1;
 
-                   for (let i = startIndex; i < buffer.length; i++) {
-                       const char = buffer[i];
-                       if (char === '"' && (i === 0 || buffer[i - 1] !== '\\')) {
-                           inString = !inString;
+                       for (let i = startIndex; i < buffer.length; i++) {
+                           const char = buffer[i];
+                           if (char === '"' && (i === 0 || buffer[i - 1] !== '\\')) {
+                               inString = !inString;
+                           }
+                           if (inString) continue;
+
+                           if (char === '[') braceCount++;
+                           else if (char === ']') braceCount--;
+                           
+                           if (braceCount === 0) {
+                               endIndex = i;
+                               break;
+                           }
                        }
-                       if (inString) continue;
 
-                       if (char === '[') braceCount++;
-                       else if (char === ']') braceCount--;
-                       
-                       if (braceCount === 0) {
-                           endIndex = i;
+                       if (endIndex !== -1) {
+                           const jsonString = buffer.substring(startIndex, endIndex + 1);
+                           buffer = buffer.substring(endIndex + 1);
+
+                           try {
+                               const jsonObjectArray = JSON.parse(jsonString);
+                               for (const jsonObject of jsonObjectArray) {
+                                   if (jsonObject.candidates && jsonObject.candidates[0].content.parts) {
+                                       jsonObject.candidates[0].content.parts.forEach(part => {
+                                           if (part.functionCall && part.functionCall.name === 'code_execution') {
+                                               const thought = `Tool Call: ${part.functionCall.name}\n` +
+                                                               `Arguments:\n` +
+                                                               `${JSON.stringify(part.functionCall.args, null, 2)}`;
+                                               appendThoughtToModal(thought);
+                                           } else if (part.text) {
+                                               fullText += part.text;
+                                           }
+                                       });
+                                   }
+                                   if (jsonObject.candidates && jsonObject.candidates[0].groundingMetadata) {
+                                       lastCandidateWithMetadata = jsonObject.candidates[0];
+                                   }
+                               }
+                           } catch (e) {
+                               console.error("Error parsing stream JSON:", e, "JSON String:", jsonString);
+                           }
+                       } else {
+                           // No complete JSON object found in the buffer, wait for more data
                            break;
                        }
-                   }
-
-                   if (endIndex !== -1) {
-                       const jsonString = buffer.substring(startIndex, endIndex + 1);
-                       buffer = buffer.substring(endIndex + 1);
-
-                       try {
-                           const jsonObjectArray = JSON.parse(jsonString);
-                           for (const jsonObject of jsonObjectArray) {
-                               if (jsonObject.candidates && jsonObject.candidates[0].content.parts) {
-                                   jsonObject.candidates[0].content.parts.forEach(part => {
-                                       if (part.functionCall && part.functionCall.name === 'code_execution') {
-                                           const thought = `Tool Call: ${part.functionCall.name}\n` +
-                                                           `Arguments:\n` +
-                                                           `${JSON.stringify(part.functionCall.args, null, 2)}`;
-                                           appendThoughtToModal(thought);
-                                       } else if (part.text) {
-                                           fullText += part.text;
-                                       }
-                                   });
-                               }
-                               if (jsonObject.candidates && jsonObject.candidates[0].groundingMetadata) {
-                                   lastCandidateWithMetadata = jsonObject.candidates[0];
-                               }
-                           }
-                       } catch (e) {
-                           console.error("Error parsing stream JSON:", e, "JSON String:", jsonString);
-                       }
-                       
-                       processBuffer(); // Process the rest of the buffer
                    }
                }
 
@@ -1034,26 +1037,30 @@ document.addEventListener('DOMContentLoaded', () => {
                            
                            // Final processing of accumulated fullText
                            try {
-                               const responseObject = extractAndCleanJson(fullText);
-                               if (responseObject) {
-                                   if (responseObject.mainResponse && responseObject.statusMessage) {
-                                       let responseText = responseObject.mainResponse;
-                                       if (webBrowsingCheckbox.checked && lastCandidateWithMetadata) {
-                                           responseText = addCitations(responseText, lastCandidateWithMetadata);
-                                       }
-                                       const html = converter.makeHtml(responseText);
-                                       aiResponseDiv.innerHTML = html;
-                                       appendChatBubble(responseObject.statusMessage, 'ai', responseText);
-                                       conversationHistory.push({ role: 'user', parts: userParts });
-                                       conversationHistory.push({ role: 'model', parts: [{ text: JSON.stringify(responseObject) }] });
-                                   } else {
-                                       throw new Error("Invalid JSON structure from AI.");
+                               // Find the last occurrence of a JSON object in the potentially concatenated string
+                               const lastJsonMatch = fullText.lastIndexOf('{"mainResponse"');
+                               const textToParse = lastJsonMatch !== -1 ? fullText.substring(lastJsonMatch) : fullText;
+
+                               const responseObject = extractAndCleanJson(textToParse);
+                               if (responseObject && responseObject.mainResponse && responseObject.statusMessage) {
+                                   let responseText = responseObject.mainResponse;
+                                   if (webBrowsingCheckbox.checked && lastCandidateWithMetadata) {
+                                       responseText = addCitations(responseText, lastCandidateWithMetadata);
                                    }
+                                   const html = converter.makeHtml(responseText);
+                                   aiResponseDiv.innerHTML = html;
+                                   appendChatBubble(responseObject.statusMessage, 'ai', responseText);
+                                   conversationHistory.push({ role: 'user', parts: userParts });
+                                   // Save the cleaned, single JSON object to history
+                                   conversationHistory.push({ role: 'model', parts: [{ text: JSON.stringify(responseObject) }] });
                                } else {
-                                    // Fallback if final response is not JSON
+                                   // Absolute fallback if JSON parsing fails completely
+                                   console.error("Final attempt to parse JSON failed. Displaying raw text.");
                                    const html = converter.makeHtml(fullText);
                                    aiResponseDiv.innerHTML = html;
-                                   appendChatBubble("Here is the generated content.", 'ai', fullText);
+                                   appendChatBubble("Here is the generated content (raw).", 'ai', fullText);
+                                   conversationHistory.push({ role: 'user', parts: userParts });
+                                   conversationHistory.push({ role: 'model', parts: [{ text: fullText }] });
                                }
                            } catch (e) {
                                console.error("Failed to parse JSON from AI response:", e);
@@ -1309,64 +1316,36 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
    function extractAndCleanJson(text) {
-       // Find the full JSON string by locating the first '{' and the last '}'
-       const startIndex = text.indexOf('{');
-       const endIndex = text.lastIndexOf('}');
-       if (startIndex === -1 || endIndex === -1) {
-           console.error("Could not find JSON object in the response.");
+       // This regex is designed to find JSON objects that start with `{"mainResponse"`
+       // and accounts for nested structures. It's non-greedy to find the shortest match.
+       const regex = /{\s*"mainResponse"\s*:\s*".*?"\s*,\s*"statusMessage"\s*:\s*".*?"\s*}/gs;
+       const matches = text.match(regex);
+
+       if (!matches) {
+           console.error("No valid JSON objects found in the response text.");
+           // Fallback for cases where the AI might not return the expected JSON structure at all
+           const simpleJsonMatch = text.match(/\{[\s\S]*\}/);
+           if (simpleJsonMatch) {
+               try {
+                   return JSON.parse(simpleJsonMatch[0]);
+               } catch (e) {
+                    console.error("Could not even parse a simple JSON object from the text.");
+                    return null;
+               }
+           }
            return null;
        }
-       const jsonString = text.substring(startIndex, endIndex + 1);
+
+       // The last match is the most likely to be the complete and final one.
+       const lastMatch = matches[matches.length - 1];
 
        try {
-           // First, try to parse the JSON directly. If it works, we're done.
-           return JSON.parse(jsonString);
+           return JSON.parse(lastMatch);
        } catch (e) {
-           // If direct parsing fails, proceed with the surgical fix.
-           console.warn("Direct JSON parsing failed, attempting surgical fix...");
-           try {
-               // Define the keys we'll use as anchors
-               const mainResponseKey = '"mainResponse"';
-               const statusMessageKey = '"statusMessage"';
-
-               // Find the start of the mainResponse value
-               let mainResponseValueStart = jsonString.indexOf(mainResponseKey);
-               if (mainResponseValueStart === -1) throw new Error('mainResponse key not found');
-               mainResponseValueStart = jsonString.indexOf(':', mainResponseValueStart) + 1;
-               mainResponseValueStart = jsonString.indexOf('"', mainResponseValueStart) + 1;
-
-               // Find the end of the mainResponse value
-               let mainResponseValueEnd = jsonString.lastIndexOf(statusMessageKey);
-               if (mainResponseValueEnd === -1) throw new Error('statusMessage key not found');
-               mainResponseValueEnd = jsonString.lastIndexOf('"', mainResponseValueEnd);
-               // Backtrack to the comma before the statusMessage key
-               mainResponseValueEnd = jsonString.lastIndexOf('"', mainResponseValueEnd -1) + 1;
-
-
-               if (mainResponseValueStart >= mainResponseValueEnd) {
-                   throw new Error('Could not determine mainResponse content boundaries.');
-               }
-
-               // Extract the three parts of the JSON string
-               const prefix = jsonString.substring(0, mainResponseValueStart);
-               const content = jsonString.substring(mainResponseValueStart, mainResponseValueEnd -1);
-               const suffix = jsonString.substring(mainResponseValueEnd -1);
-
-               // Escape only the unescaped double quotes within the content
-               const escapedContent = content.replace(/(?<!\\)"/g, '\\"');
-
-               // Reconstruct the JSON string
-               const reconstructedJson = prefix + escapedContent + suffix;
-               
-               console.log("Successfully reconstructed JSON, attempting to parse again.");
-               return JSON.parse(reconstructedJson);
-
-           } catch (fixError) {
-               console.error("Surgical JSON fix failed:", fixError);
-               console.error("Original text:", text);
-               console.error("Initial JSON string:", jsonString);
-               return null; // Return null if all attempts fail
-           }
+           console.error("Failed to parse the best-matched JSON object:", e);
+           console.error("Original text causing failure:", text);
+           console.error("Matched JSON string:", lastMatch);
+           return null;
        }
    }
     function addCitations(text, candidate) {
