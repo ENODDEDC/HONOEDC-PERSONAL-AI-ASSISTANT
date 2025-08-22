@@ -27,7 +27,7 @@
         body {
             font-family: 'Roboto', sans-serif;
         }
-        #aiResponse pre {
+        #aiResponse pre, #viewResponseContent pre {
             background-color: #282c34; /* atom-one-dark background */
             color: #abb2bf; /* atom-one-dark foreground */
             padding: 1em;
@@ -35,24 +35,24 @@
             overflow-x: auto;
             font-family: 'Courier New', Courier, monospace;
         }
-        #aiResponse code {
+        #aiResponse code, #viewResponseContent code {
             font-family: 'Courier New', Courier, monospace;
         }
-        #aiResponse table {
+        #aiResponse table, #viewResponseContent table {
             border-collapse: collapse;
             width: 100%;
             margin-top: 1em;
             margin-bottom: 1em;
         }
-        #aiResponse th, #aiResponse td {
+        #aiResponse th, #aiResponse td, #viewResponseContent th, #viewResponseContent td {
             border: 1px solid #4b5563; /* bg-gray-600 */
             padding: 8px;
             text-align: left;
         }
-        #aiResponse th {
+        #aiResponse th, #viewResponseContent th {
             background-color: #374151; /* bg-gray-700 */
         }
-        #aiResponse h1, #aiResponse h2, #aiResponse h3 {
+        #aiResponse h1, #aiResponse h2, #aiResponse h3, #viewResponseContent h1, #viewResponseContent h2, #viewResponseContent h3 {
             font-weight: bold;
             margin-top: 1em;
             margin-bottom: 0.5em;
@@ -118,7 +118,7 @@
        #aiResponse a:hover {
            color: #a5b4fc; /* text-indigo-300 */
        }
-       #aiResponse {
+       #aiResponse, #viewResponseContent {
            text-align: justify;
            white-space: pre-wrap;
        }
@@ -129,10 +129,10 @@
        #docPreview li {
            display: list-item;
        }
-       #aiResponse .task-list-item {
+       #aiResponse .task-list-item, #viewResponseContent .task-list-item {
            list-style-type: none;
        }
-       #aiResponse .task-list-item input[type="checkbox"] {
+       #aiResponse .task-list-item input[type="checkbox"], #viewResponseContent .task-list-item input[type="checkbox"] {
            margin-right: 10px;
        }
     </style>
