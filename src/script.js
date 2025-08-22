@@ -765,7 +765,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         if (!prompt) {
-            showToast('Please enter your prompt.');
+            showToast('Please enter a prompt.');
             return;
         }
 
@@ -774,383 +774,171 @@ document.addEventListener('DOMContentLoaded', () => {
         appendChatBubble(prompt, 'user');
         promptTextarea.value = '';
 
-        // Command-specific routing before general intent detection
-        if (prompt.startsWith('/doc')) {
-            window.commands.handleDocCommand(prompt, apiKey, model).finally(() => {
-                submitButton.disabled = false;
-                submitButton.classList.remove('opacity-50', 'cursor-not-allowed');
+        const isModificationCommand = prompt.toLowerCase().includes('create') ||
+                                      prompt.toLowerCase().includes('modify') ||
+                                      prompt.toLowerCase().includes('edit');
 
-    // --- New: Call getUserData and display a message --- 
-    // In a real scenario, you would have a more sophisticated way to trigger this, 
-    // perhaps based on a specific user command or UI interaction.
-    // For demonstration, we'll just call it directly after an initial prompt is processed.
-    if (window.getUserData) {
-        window.getUserData().then(userData => {
-            console.log('Received user data:', userData);
-            // Display a placeholder or actual data if available
-            const aiResponseDiv = document.getElementById('aiResponse');
-            if (aiResponseDiv) {
-                const message = userData ? `User data fetched successfully. Displaying first name: ${userData.name ? userData.name.split(' ')[0] : 'N/A'}` : 'User data fetched, but no data was returned.'
-                const html = converter.makeHtml(message);
-                aiResponseDiv.innerHTML = html;
-                appendChatBubble(message, 'ai', message);
-            }
-        }).catch(error => {
-            console.error('Failed to display user data:', error);
-            const aiResponseDiv = document.getElementById('aiResponse');
-            if (aiResponseDiv) {
-                aiResponseDiv.innerHTML = '<p>Error fetching or displaying user data.</p>';
-                appendChatBubble('Error fetching or displaying user data.', 'ai');
-            }
-        });
-    } else {
-        console.warn('getUserData function not found globally.');
-    }
-    // --- End New --- 
-            });
-            return;
+        if (isModificationCommand) {
+            const steps = generateThinkingSteps(prompt, ""); // No file context for general chat
+            window.startAIProcessing(steps);
         }
+        
+        aiResponseDiv.textContent = 'Thinking...';
 
-
-       const isModificationCommand = prompt.toLowerCase().includes('create') ||
-                                     prompt.toLowerCase().includes('modify') ||
-                                     prompt.toLowerCase().includes('edit');
-
-        // New Intent Detection Logic
-        const intentPrompt = `
-            You are an expert at classifying user intent. Analyze the user's prompt and the conversation history to determine the primary intent.
-            Respond with a single, valid JSON object with one key, "intent", and one of the following values: "code_modification", "code_question", "table_interaction", "general_chat".
-
-            - "code_modification": Use for requests that explicitly ask to CREATE, MODIFY, EDIT, UPDATE, or DELETE files/code. This also includes contextual follow-ups like "on that file, change the title".
-              Examples: "create a new file named index.php", "refactor the login function in auth.js", "add a button to the homepage".
-            - "code_question": Use for questions ABOUT the code or project that DO NOT request changes.
-              Examples: "how does the build process work?", "what is this function for?", "what files did you just create?".
-            - "table_interaction": Use for requests to create, modify, or query the structured tables.
-              Examples: "add a new table for users", "update the price in the products table".
-            - "general_chat": Use for all other requests, like greetings or conversations not about the project's code/tables.
-              Examples: "hello", "what are your capabilities?".
-
-            **IMPORTANT**: If the user's prompt is a follow-up that refers to a file from the previous turn (e.g., "in that file...", "now change this..."), you MUST classify it as "code_modification" or "code_question" as appropriate.
-
-            Conversation History (last 2 turns):
-            ${window.conversationHistory.slice(-2).map(turn => `${turn.role}: ${turn.parts[0].text}`).join('\n')}
-
-            User prompt: "${prompt}"
-        `;
-
-        const intentApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-        const intentRequestBody = {
-            contents: [{ role: 'user', parts: [{ text: intentPrompt }] }]
-        };
-
-        let intent = 'general_chat'; // Default intent
         try {
-            const response = await fetch(intentApiUrl, {
+            // This is the unified user input object, including text and potentially a file.
+            const userParts = [{ text: prompt }];
+            if (pdfFileInput.files.length > 0) {
+                const file = pdfFileInput.files[0];
+                const base64 = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.readAsDataURL(file);
+                    reader.onload = () => resolve(reader.result.split(',')[1]);
+                    reader.onerror = error => reject(error);
+                });
+                userParts.push({
+                    inlineData: { mimeType: file.type, data: base64 }
+                });
+                pdfFileInput.value = ''; // Clear the file input
+            }
+
+            // Always use the 'general_chat' logic as the single, reliable pipeline.
+            // All command routing should happen server-side or be handled by the AI's tool use.
+            const webBrowsingEnabled = webBrowsingCheckbox.checked;
+
+            const engineeredPrompt = `
+                You are Honoedc, a helpful and conversational AI assistant. Your task is to respond to the user's request in a natural, friendly way while adhering to a specific JSON output format.
+                The user's request is: "${prompt}"
+                **Crucially, you must use the provided conversation history to inform your response and maintain context.**
+                You MUST provide a response in a single, valid JSON object. This object must have two keys:
+                1. "mainResponse": A detailed, comprehensive, and conversational answer to the user's query, formatted in Markdown.
+                2. "statusMessage": A brief, single-sentence summary of the action taken (e.g., "I have answered your question about my capabilities."). This should be plain text.
+            `;
+
+            const requestBody = {
+                contents: [...window.conversationHistory, { role: 'user', parts: [{ text: engineeredPrompt }, ...userParts.slice(1)] }],
+                systemInstruction: { parts: [{ text: systemInstruction }] },
+                generationConfig: {
+                    candidateCount: 1,
+                    stopSequences: [],
+                    maxOutputTokens: 8192,
+                    temperature: 1,
+                    topP: 0.95,
+                },
+                safetySettings: [
+                    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+                    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+                    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+                    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+                ],
+            };
+            
+            if (webBrowsingEnabled) {
+                requestBody.tools = [{ googleSearch: {} }];
+            }
+
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`;
+            const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(intentRequestBody)
+                body: JSON.stringify(requestBody)
             });
-            const data = await response.json();
-            if (data.error) {
-                showApiErrorModal(data.error.message);
-                console.error('Intent detection API error:', data.error);
-            } else if (data && data.candidates && data.candidates.length > 0 && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts.length > 0) {
-                const rawText = data.candidates[0].content.parts[0].text;
-                const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-                if (jsonMatch) {
-                    try {
-                        const responseObject = JSON.parse(jsonMatch[0]);
-                        if (responseObject.intent) {
-                            intent = responseObject.intent;
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`);
+            }
+
+            const reader = response.body.getReader();
+            let buffer = '';
+            let fullText = '';
+            let lastCandidateWithMetadata = null;
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    console.log('Stream complete');
+                    break;
+                }
+                buffer += new TextDecoder().decode(value);
+                
+                // Process all complete JSON chunks in the buffer
+                while (true) {
+                    const start = buffer.indexOf('[');
+                    if (start === -1) break;
+                    
+                    let braceCount = 0;
+                    let end = -1;
+                    for (let i = start; i < buffer.length; i++) {
+                        if (buffer[i] === '[') braceCount++;
+                        else if (buffer[i] === ']') braceCount--;
+                        if (braceCount === 0) {
+                            end = i;
+                            break;
                         }
-                    } catch (e) {
-                        console.error('Failed to parse intent JSON:', e);
+                    }
+
+                    if (end !== -1) {
+                        const chunk = buffer.substring(start, end + 1);
+                        buffer = buffer.substring(end + 1);
+                        try {
+                            const jsonArray = JSON.parse(chunk);
+                            for (const jsonObj of jsonArray) {
+                                if (jsonObj.candidates && jsonObj.candidates[0].content.parts) {
+                                    jsonObj.candidates[0].content.parts.forEach(part => {
+                                        if (part.text) fullText += part.text;
+                                    });
+                                }
+                                if (jsonObj.candidates && jsonObj.candidates[0].groundingMetadata) {
+                                    lastCandidateWithMetadata = jsonObj.candidates[0];
+                                }
+                            }
+                        } catch (e) {
+                            console.error("Error parsing stream JSON chunk:", e, "Chunk:", chunk);
+                        }
+                    } else {
+                        break; // Wait for more data
                     }
                 }
-            } else {
-                console.error('Intent detection response was malformed:', JSON.stringify(data, null, 2));
-            }
-        } catch (error) {
-            console.error('Intent detection failed, falling back to general chat:', error);
-        }
-
-        if (intent === 'code_modification' || intent === 'code_question') {
-            const webBrowsingEnabled = webBrowsingCheckbox.checked;
-            window.commands.handleCodeCommand(`/${intent} ${prompt}`, apiKey, model, webBrowsingEnabled).finally(() => {
-                submitButton.disabled = false;
-                submitButton.classList.remove('opacity-50', 'cursor-not-allowed');
-            });
-            return;
-        } else if (intent === 'table_interaction') {
-            window.commands.handleTableCommand(`/table ${prompt}`, apiKey, model).finally(() => {
-                submitButton.disabled = false;
-                submitButton.classList.remove('opacity-50', 'cursor-not-allowed');
-            });
-            return;
-        }
-
-        // Fallback to general_chat
-        console.log('Submit button clicked for normal chat.');
-        const webBrowsingEnabled = webBrowsingCheckbox.checked;
-        console.log('Web browsing enabled:', webBrowsingEnabled);
-
-        promptTextarea.value = ''; // Clear prompt after sending
-
-        // Disable the button and provide feedback
-        submitButton.disabled = true;
-        submitButton.classList.add('opacity-50', 'cursor-not-allowed');
-        console.log('Submit button disabled and text changed.');
-        aiResponseDiv.textContent = 'Thinking...'; // Clear previous response and show loading
-       
-       if (isModificationCommand) {
-           const steps = generateThinkingSteps(prompt, ""); // No file context for general chat
-           window.startAIProcessing(steps);
-       }
-
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`;
-
-        const engineeredPrompt = `
-            You are a helpful and conversational AI assistant. Your task is to respond to the user's request in a natural, friendly way while adhering to a specific JSON output format.
-
-            The user's request is: "${prompt}"
-
-            **Crucially, you must use the provided conversation history to inform your response and maintain context.** Do not refer to files or events that are not mentioned in the history.
-
-            You MUST provide a response in a single, valid JSON object. This object must have two keys:
-            1. "mainResponse": A detailed, comprehensive, and conversational answer to the user's query, formatted in Markdown.
-            2. "statusMessage": A brief, single-sentence summary of the action taken (e.g., "I have answered your question about my capabilities.", "I have greeted you and offered assistance."). This should be plain text.
-
-            **Example 1: Simple Greeting**
-            User request: "hello"
-            Your response:
-            {
-              "mainResponse": "Hello there! How can I help you today?",
-              "statusMessage": "I have greeted the user and offered assistance."
             }
 
-            **Example 2: Question about capabilities**
-            User request: "what are your capabilities?"
-            Your response:
-            {
-              "mainResponse": "I can do a few things! I can answer your questions, help you with coding tasks, and even generate diagrams or color palettes. What would you like to explore?",
-              "statusMessage": "I have explained my main capabilities to the user."
-            }
-        `;
+            // Final processing of the fully accumulated text
+            const lastJsonMatch = fullText.lastIndexOf('{"mainResponse"');
+            const textToParse = lastJsonMatch !== -1 ? fullText.substring(lastJsonMatch) : fullText;
+            const responseObject = extractAndCleanJson(textToParse);
 
-        const userParts = [{
-            text: prompt
-        }];
-
-        if (pdfFileInput.files.length > 0) {
-            const file = pdfFileInput.files[0];
-            const base64 = await new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = () => resolve(reader.result.split(',')[1]);
-                reader.onerror = error => reject(error);
-            });
-            userParts.push({
-                inlineData: {
-                    mimeType: 'application/pdf',
-                    data: base64
+            if (responseObject && responseObject.mainResponse && responseObject.statusMessage) {
+                let responseText = responseObject.mainResponse;
+                if (webBrowsingCheckbox.checked && lastCandidateWithMetadata) {
+                    responseText = addCitations(responseText, lastCandidateWithMetadata);
                 }
-            });
+                const html = converter.makeHtml(responseText);
+                aiResponseDiv.innerHTML = html;
+                if (window.hljs) {
+                    aiResponseDiv.querySelectorAll('pre code').forEach(hljs.highlightElement);
+                }
+                appendChatBubble(responseObject.statusMessage, 'ai', responseText);
+                conversationHistory.push({ role: 'user', parts: userParts });
+                conversationHistory.push({ role: 'model', parts: [{ text: JSON.stringify(responseObject) }] });
+            } else {
+                console.error("Final JSON parsing failed. Displaying raw text.");
+                const html = converter.makeHtml(fullText);
+                aiResponseDiv.innerHTML = html;
+                appendChatBubble("Here is the generated content (raw).", 'ai', fullText);
+                conversationHistory.push({ role: 'user', parts: userParts });
+                conversationHistory.push({ role: 'model', parts: [{ text: fullText }] });
+            }
+
+        } catch (error) {
+            console.error('Error fetching AI response:', error);
+            showApiErrorModal(error.message);
+        } finally {
+            if (isModificationCommand) {
+                window.stopAIProcessing();
+            }
+            submitButton.disabled = false;
+            submitButton.classList.remove('opacity-50', 'cursor-not-allowed');
         }
-
-        const requestParts = [{
-            text: engineeredPrompt
-        }];
-
-        if (pdfFileInput.files.length > 0) {
-            requestParts.push(userParts.find(p => p.inlineData));
-        }
-
-        const requestBody = {
-            contents: [...window.conversationHistory, {
-                role: 'user',
-                parts: requestParts
-            }],
-            systemInstruction: {
-                parts: [{ text: systemInstruction }]
-            },
-           generationConfig: {
-               candidateCount: 1,
-               stopSequences: [],
-               maxOutputTokens: 8192,
-               temperature: 1,
-               topP: 0.95,
-           },
-           safetySettings: [
-               { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-               { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-               { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-               { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-           ],
-        };
-
-       if (webBrowsingEnabled) {
-            requestBody.tools = [{
-                googleSearch: {}
-            }];
-        } else if (isModificationCommand) {
-           requestBody.tools = [{
-               code_execution: {}
-           }];
-       }
-
-        fetch(apiUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(requestBody)
-            })
-           .then(response => {
-               if (!response.ok) {
-                   return response.json().then(errorData => {
-                       const errorMessage = errorData.error?.message || `HTTP error! status: ${response.status}`;
-                       throw new Error(errorMessage);
-                   }).catch(() => {
-                       throw new Error(`HTTP error! status: ${response.status}`);
-                   });
-               }
-               const reader = response.body.getReader();
-               let buffer = '';
-               let fullText = '';
-               let lastCandidateWithMetadata = null;
-
-               function processBuffer() {
-                   while (true) {
-                       let startIndex = buffer.indexOf('[');
-                       if (startIndex === -1) return;
-
-                       let braceCount = 0;
-                       let inString = false;
-                       let endIndex = -1;
-
-                       for (let i = startIndex; i < buffer.length; i++) {
-                           const char = buffer[i];
-                           if (char === '"' && (i === 0 || buffer[i - 1] !== '\\')) {
-                               inString = !inString;
-                           }
-                           if (inString) continue;
-
-                           if (char === '[') braceCount++;
-                           else if (char === ']') braceCount--;
-                           
-                           if (braceCount === 0) {
-                               endIndex = i;
-                               break;
-                           }
-                       }
-
-                       if (endIndex !== -1) {
-                           const jsonString = buffer.substring(startIndex, endIndex + 1);
-                           buffer = buffer.substring(endIndex + 1);
-
-                           try {
-                               const jsonObjectArray = JSON.parse(jsonString);
-                               for (const jsonObject of jsonObjectArray) {
-                                   if (jsonObject.candidates && jsonObject.candidates[0].content.parts) {
-                                       jsonObject.candidates[0].content.parts.forEach(part => {
-                                           if (part.functionCall && part.functionCall.name === 'code_execution') {
-                                               const thought = `Tool Call: ${part.functionCall.name}\n` +
-                                                               `Arguments:\n` +
-                                                               `${JSON.stringify(part.functionCall.args, null, 2)}`;
-                                               appendThoughtToModal(thought);
-                                           } else if (part.text) {
-                                               fullText += part.text;
-                                           }
-                                       });
-                                   }
-                                   if (jsonObject.candidates && jsonObject.candidates[0].groundingMetadata) {
-                                       lastCandidateWithMetadata = jsonObject.candidates[0];
-                                   }
-                               }
-                           } catch (e) {
-                               console.error("Error parsing stream JSON:", e, "JSON String:", jsonString);
-                           }
-                       } else {
-                           // No complete JSON object found in the buffer, wait for more data
-                           break;
-                       }
-                   }
-               }
-
-               function read() {
-                   reader.read().then(({ done, value }) => {
-                       if (done) {
-                           if (isModificationCommand) {
-                               window.stopAIProcessing();
-                           }
-                           submitButton.disabled = false;
-                           submitButton.classList.remove('opacity-50', 'cursor-not-allowed');
-                           console.log('Stream complete');
-                           
-                           // Final processing of accumulated fullText
-                           try {
-                               // Find the last occurrence of a JSON object in the potentially concatenated string
-                               const lastJsonMatch = fullText.lastIndexOf('{"mainResponse"');
-                               const textToParse = lastJsonMatch !== -1 ? fullText.substring(lastJsonMatch) : fullText;
-
-                               const responseObject = extractAndCleanJson(textToParse);
-                               if (responseObject && responseObject.mainResponse && responseObject.statusMessage) {
-                                   let responseText = responseObject.mainResponse;
-                                   if (webBrowsingCheckbox.checked && lastCandidateWithMetadata) {
-                                       responseText = addCitations(responseText, lastCandidateWithMetadata);
-                                   }
-                                   const html = converter.makeHtml(responseText);
-                                   aiResponseDiv.innerHTML = html;
-                                   // Apply syntax highlighting after content is rendered
-                                   if (window.hljs) {
-                                       aiResponseDiv.querySelectorAll('pre code').forEach((block) => {
-                                           hljs.highlightElement(block);
-                                       });
-                                   }
-                                   appendChatBubble(responseObject.statusMessage, 'ai', responseText);
-                                   conversationHistory.push({ role: 'user', parts: userParts });
-                                   // Save the cleaned, single JSON object to history
-                                   conversationHistory.push({ role: 'model', parts: [{ text: JSON.stringify(responseObject) }] });
-                               } else {
-                                   // Absolute fallback if JSON parsing fails completely
-                                   console.error("Final attempt to parse JSON failed. Displaying raw text.");
-                                   const html = converter.makeHtml(fullText);
-                                   aiResponseDiv.innerHTML = html;
-                                   // Apply syntax highlighting after content is rendered
-                                   if (window.hljs) {
-                                       aiResponseDiv.querySelectorAll('pre code').forEach((block) => {
-                                           hljs.highlightElement(block);
-                                       });
-                                   }
-                                   appendChatBubble("Here is the generated content (raw).", 'ai', fullText);
-                                   conversationHistory.push({ role: 'user', parts: userParts });
-                                   conversationHistory.push({ role: 'model', parts: [{ text: fullText }] });
-                               }
-                           } catch (e) {
-                               console.error("Failed to parse JSON from AI response:", e);
-                               const html = converter.makeHtml("I apologize, but I encountered an issue with formatting my response. Here is the raw data:\n\n" + fullText);
-                               aiResponseDiv.innerHTML = html;
-                               appendChatBubble("I've processed your request, but there was a formatting error. The raw response is on the left.", 'ai');
-                           }
-                           return;
-                       }
-
-                       buffer += new TextDecoder().decode(value);
-                       processBuffer();
-                       read();
-                   });
-               }
-               read();
-           })
-            .catch(error => {
-                console.error('Error fetching AI response:', error);
-                showApiErrorModal(error.message);
-               if (isModificationCommand) {
-                   window.stopAIProcessing();
-               }
-               submitButton.disabled = false;
-               submitButton.classList.remove('opacity-50', 'cursor-not-allowed');
-            });
     });
 
    window.getAllProjectFiles = () => {
