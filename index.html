@@ -38,6 +38,13 @@
         #aiResponse code, #viewResponseContent code {
             font-family: 'Courier New', Courier, monospace;
         }
+        /* Style for inline code, but not for code blocks */
+        :not(pre) > code {
+            background-color: #282c34;
+            color: #abb2bf;
+            padding: 0.2em 0.4em;
+            border-radius: 3px;
+        }
         #aiResponse table, #viewResponseContent table {
             border-collapse: collapse;
             width: 100%;
@@ -131,6 +138,7 @@
        }
        #aiResponse .task-list-item, #viewResponseContent .task-list-item {
            list-style-type: none;
+           margin-left: 1.5em; /* Indent checkboxes */
        }
        #aiResponse .task-list-item input[type="checkbox"], #viewResponseContent .task-list-item input[type="checkbox"] {
            margin-right: 10px;
