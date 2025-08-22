@@ -1196,36 +1196,59 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
    function extractAndCleanJson(text) {
-       // This regex is designed to find JSON objects that start with `{"mainResponse"`
-       // and accounts for nested structures. It's non-greedy to find the shortest match.
-       const regex = /{\s*"mainResponse"\s*:\s*".*?"\s*,\s*"statusMessage"\s*:\s*".*?"\s*}/gs;
-       const matches = text.match(regex);
-
-       if (!matches) {
-           console.error("No valid JSON objects found in the response text.");
-           // Fallback for cases where the AI might not return the expected JSON structure at all
-           const simpleJsonMatch = text.match(/\{[\s\S]*\}/);
-           if (simpleJsonMatch) {
-               try {
-                   return JSON.parse(simpleJsonMatch[0]);
-               } catch (e) {
-                    console.error("Could not even parse a simple JSON object from the text.");
-                    return null;
-               }
-           }
-           return null;
-       }
-
-       // The last match is the most likely to be the complete and final one.
-       const lastMatch = matches[matches.length - 1];
-
        try {
-           return JSON.parse(lastMatch);
-       } catch (e) {
-           console.error("Failed to parse the best-matched JSON object:", e);
-           console.error("Original text causing failure:", text);
-           console.error("Matched JSON string:", lastMatch);
-           return null;
+           // Find the full JSON string by locating the first '{' and the last '}'
+           const startIndex = text.indexOf('{');
+           const endIndex = text.lastIndexOf('}');
+           if (startIndex === -1 || endIndex === -1) {
+               console.error("Could not find JSON object in the response.");
+               return null;
+           }
+           const jsonString = text.substring(startIndex, endIndex + 1);
+
+           // Define the keys we'll use as anchors
+           const mainResponseKey = '"mainResponse"';
+           const statusMessageKey = '"statusMessage"';
+
+           // Find the start of the mainResponse value
+           let mainResponseValueStart = jsonString.indexOf(mainResponseKey);
+           if (mainResponseValueStart === -1) throw new Error('mainResponse key not found');
+           mainResponseValueStart = jsonString.indexOf(':', mainResponseValueStart) + 1;
+           mainResponseValueStart = jsonString.indexOf('"', mainResponseValueStart) + 1;
+
+           // Find the end of the mainResponse value
+           let mainResponseValueEnd = jsonString.lastIndexOf(statusMessageKey);
+           if (mainResponseValueEnd === -1) throw new Error('statusMessage key not found');
+           // Backtrack to the comma, then to the quote before it.
+           mainResponseValueEnd = jsonString.lastIndexOf('"', mainResponseValueEnd - 2);
+
+           if (mainResponseValueStart >= mainResponseValueEnd) {
+               throw new Error('Could not determine mainResponse content boundaries.');
+           }
+
+           // Extract the three parts of the JSON string
+           const prefix = jsonString.substring(0, mainResponseValueStart);
+           const content = jsonString.substring(mainResponseValueStart, mainResponseValueEnd);
+           const suffix = jsonString.substring(mainResponseValueEnd);
+
+           // Escape only the unescaped double quotes within the content
+           const escapedContent = content.replace(/(?<!\\)"/g, '\\"');
+
+           // Reconstruct the JSON string
+           const reconstructedJson = prefix + escapedContent + suffix;
+           
+           console.log("Successfully reconstructed JSON, attempting to parse again.");
+           return JSON.parse(reconstructedJson);
+
+       } catch (fixError) {
+           console.error("Surgical JSON fix failed:", fixError);
+           try {
+                // Absolute fallback: try to parse the original string one last time.
+                return JSON.parse(text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1));
+           } catch (finalError) {
+                console.error("All JSON parsing attempts failed.", finalError);
+                return null;
+           }
        }
    }
     function addCitations(text, candidate) {
